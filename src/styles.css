@@ -1,0 +1,38 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-bg: var(--c-bg);
+  --color-surface: var(--c-surface);
+  --color-elevated: var(--c-elevated);
+  --color-text: var(--c-text);
+  --color-muted: var(--c-muted);
+  --color-line: var(--c-line);
+  --color-accent: var(--c-accent);
+}
+
+:where(.app) {
+  --c-bg: #f3f4f6;
+  --c-surface: #ffffff;
+  --c-elevated: #ffffff;
+  --c-text: #111418;
+  --c-muted: #8a8f98;
+  --c-line: #e6e8ec;
+  --c-accent: #3b82f6;
+  color: var(--c-text);
+  background: var(--c-bg);
+}
+
+:where(.app.dark) {
+  --c-bg: #0d1424;
+  --c-surface: rgba(255, 255, 255, 0.06);
+  --c-elevated: #131b2e;
+  --c-text: #e8eefc;
+  --c-muted: #7d89a6;
+  --c-line: rgba(255, 255, 255, 0.08);
+  --c-accent: #6ea8ff;
+}
+
+:where(.app) * {
+  box-sizing: border-box;
+}

@@ -1,9 +1,11 @@
 import { createRoot, type Root } from "react-dom/client";
 import { Panel } from "./Panel";
+import styles from "./styles.css?inline";
 
 interface HassLike {
   states: Record<string, unknown>;
   connection: unknown;
+  themes?: { darkMode?: boolean };
 }
 
 class HaReactDash extends HTMLElement {
@@ -12,10 +14,11 @@ class HaReactDash extends HTMLElement {
   private _hass?: HassLike;
 
   connectedCallback() {
-    // Shadow root is attached only once; HA may disconnect/reconnect the panel
-    // as the user navigates, so reuse the existing shadow root on reconnect.
     if (!this.shadowRoot) {
       const shadow = this.attachShadow({ mode: "open" });
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(styles);
+      shadow.adoptedStyleSheets = [sheet];
       this.mountPoint = document.createElement("div");
       shadow.appendChild(this.mountPoint);
     }
@@ -40,7 +43,8 @@ class HaReactDash extends HTMLElement {
   }
 
   private renderApp() {
-    this.root?.render(<Panel hass={this._hass} />);
+    const dark = this._hass?.themes?.darkMode === true;
+    this.root?.render(<Panel hass={this._hass} dark={dark} />);
   }
 }
 

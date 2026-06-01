@@ -13,7 +13,7 @@ interface HassLikeTyped {
   connection: RegistryConnection;
 }
 
-export function Panel({ hass }: { hass?: HassLike }) {
+export function Panel({ hass }: { hass?: HassLike; dark?: boolean }) {
   const tree = useStructureTree(hass as HassLikeTyped | undefined);
 
   if (!hass) {
