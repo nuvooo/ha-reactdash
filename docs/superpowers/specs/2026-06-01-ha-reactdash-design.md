@@ -124,11 +124,13 @@ Clientseitiger **Relevanz-Score** je Raum/Tile steuert Reihenfolge & Größe:
 
 - **Erststart ohne Konfiguration:** Panel öffnen → Engine liest Registries → fertiges
   Dashboard. Keine YAML-Karten, kein Wizard.
-- **Installation (zuerst, eigenes Setup):** Bundle in `config/www/` ablegen + kleiner
-  `panel_custom`-Eintrag in `configuration.yaml`; exaktes Copy-Paste-Snippet wird
-  mitgeliefert.
-- **Release-fähig:** saubere Struktur ohne Hardcodes; HACS-Politur (`hacs.json`,
-  Repo-Struktur, Doku) als spätere Phase.
+- **Plug-and-Play-Delivery (vorgezogen):** dünner Python-`custom_component`-Wrapper +
+  HACS-Metadaten. Der Wrapper registriert das Panel selbst (`panel_custom.async_register_panel`)
+  und liefert das gebaute JS-Bundle über einen statischen Pfad aus. Nutzer-Ablauf: Repo als
+  HACS-Custom-Repository hinzufügen → installieren → HA-Neustart → in der UI „Integration
+  hinzufügen" → fertig. Kein YAML, kein Datei-Kopieren.
+- **Alternativer Schnelltest:** Bundle in `config/www/` + `panel_custom`-YAML (siehe `INSTALL.md`).
+- **Release-fähig:** spätere Aufnahme in den offiziellen HACS-Default-Store.
 - **Robust bei fremden Setups:** unbekannte Entitäten → Fallback; leere Räume aus;
   keine Etagen → adaptiv nur Räume. Nichts bricht.
 
