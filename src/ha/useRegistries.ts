@@ -26,6 +26,8 @@ export function useStructureTree(hass: HassLike | undefined): StructureTree | nu
         includeHidden: false,
       });
       setTree(built);
+    }).catch((err) => {
+      if (!cancelled) console.error("ha-reactdash: registry fetch failed", err);
     });
     return () => {
       cancelled = true;

@@ -12,12 +12,22 @@ class HaReactDash extends HTMLElement {
   private _hass?: HassLike;
 
   connectedCallback() {
-    if (this.root) return;
-    const shadow = this.attachShadow({ mode: "open" });
-    this.mountPoint = document.createElement("div");
-    shadow.appendChild(this.mountPoint);
-    this.root = createRoot(this.mountPoint);
+    // Shadow root is attached only once; HA may disconnect/reconnect the panel
+    // as the user navigates, so reuse the existing shadow root on reconnect.
+    if (!this.shadowRoot) {
+      const shadow = this.attachShadow({ mode: "open" });
+      this.mountPoint = document.createElement("div");
+      shadow.appendChild(this.mountPoint);
+    }
+    if (!this.root && this.mountPoint) {
+      this.root = createRoot(this.mountPoint);
+    }
     this.renderApp();
+  }
+
+  disconnectedCallback() {
+    this.root?.unmount();
+    this.root = undefined;
   }
 
   set hass(value: HassLike) {

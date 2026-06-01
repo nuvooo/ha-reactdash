@@ -2,6 +2,7 @@ import { useStructureTree } from "./ha/useRegistries";
 import { StructureView } from "./StructureView";
 import type { RegistryConnection } from "./ha/types";
 
+// TODO(M2): centralize one HassLike type in src/ha/types.ts and drop this cast.
 interface HassLike {
   states: Record<string, unknown>;
   connection: unknown;

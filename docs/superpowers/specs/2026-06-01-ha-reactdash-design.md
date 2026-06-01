@@ -65,8 +65,8 @@ Daraus wird ein **Strukturbaum** abgeleitet:
 - **Raumzuordnung je Entität:** direkt über die Entity-Area **oder** abgeleitet über
   die Device-Area des zugehörigen Geräts.
 - **Funktions-Klassifizierung** je Raum nach `domain` + `device_class`, feste sinnvolle
-  Reihenfolge: Licht, Klima, Medien, Rollos/Cover, Schalter/Steckdosen, Sensoren,
-  Sicherheit.
+  Reihenfolge: Licht, Klima, Medien, Rollos/Cover, Schalter/Steckdosen, Sicherheit,
+  Sensoren. (Sicherheit vor Sensoren, da handlungsrelevanter.)
 - **Fallbacks:** Entitäten ohne Raum → Sammelbereich „Sonstiges". Leere Räume werden
   ausgeblendet. Versteckte/diagnostische Entitäten (entity_registry-Flags
   `hidden`/`entity_category`) standardmäßig aus, zuschaltbar.
