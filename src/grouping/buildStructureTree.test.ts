@@ -111,4 +111,57 @@ describe("buildStructureTree", () => {
 
     expect(tree.floors[0].rooms[0].groups[0].category).toBe("security");
   });
+
+  it("hängt Räume mit unbekannter Etagen-Referenz in eine 'Sonstiges'-Etage", () => {
+    const tree = buildStructureTree({
+      ...base,
+      floors: [{ floor_id: "eg", name: "Erdgeschoss", level: 0 }],
+      areas: [
+        { area_id: "wz", name: "Wohnzimmer", floor_id: "eg" },
+        { area_id: "dach", name: "Dachboden", floor_id: "og" },
+      ],
+      entities: [
+        { entity_id: "light.wz", device_id: null, area_id: "wz", hidden_by: null, entity_category: null },
+        { entity_id: "light.dach", device_id: null, area_id: "dach", hidden_by: null, entity_category: null },
+      ],
+    });
+
+    expect(tree.hasFloors).toBe(true);
+    expect(tree.floors).toHaveLength(2);
+    expect(tree.floors[0].name).toBe("Erdgeschoss");
+    expect(tree.floors[0].rooms.map((r) => r.name)).toEqual(["Wohnzimmer"]);
+    const synthetic = tree.floors[1];
+    expect(synthetic.floorId).toBeNull();
+    expect(synthetic.name).toBe("Sonstiges");
+    expect(synthetic.rooms.map((r) => r.name)).toEqual(["Dachboden"]);
+  });
+
+  it("zeigt bei includeHidden=true auch versteckte und diagnostische Entitäten", () => {
+    const tree = buildStructureTree({
+      ...base,
+      includeHidden: true,
+      areas: [{ area_id: "wz", name: "Wohnzimmer", floor_id: null }],
+      entities: [
+        { entity_id: "light.sichtbar", device_id: null, area_id: "wz", hidden_by: null, entity_category: null },
+        { entity_id: "sensor.versteckt", device_id: null, area_id: "wz", hidden_by: "user", entity_category: null },
+        { entity_id: "sensor.diag", device_id: null, area_id: "wz", hidden_by: null, entity_category: "diagnostic" },
+      ],
+    });
+
+    const ids = tree.floors[0].rooms[0].groups.flatMap((g) => g.entityIds).sort();
+    expect(ids).toEqual(["light.sichtbar", "sensor.diag", "sensor.versteckt"]);
+  });
+
+  it("nutzt die area_id als Namen, wenn kein Area-Eintrag existiert", () => {
+    const tree = buildStructureTree({
+      ...base,
+      areas: [],
+      entities: [
+        { entity_id: "light.x", device_id: null, area_id: "geist", hidden_by: null, entity_category: null },
+      ],
+    });
+
+    expect(tree.floors[0].rooms[0].areaId).toBe("geist");
+    expect(tree.floors[0].rooms[0].name).toBe("geist");
+  });
 });
