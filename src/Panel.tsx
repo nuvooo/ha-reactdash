@@ -1,26 +1,47 @@
 import { useStructureTree } from "./ha/useRegistries";
-import { StructureView } from "./StructureView";
+import { DashboardView } from "./DashboardView";
 import type { RegistryConnection } from "./ha/types";
 
-// TODO(M2): centralize one HassLike type in src/ha/types.ts and drop this cast.
+// TODO(M2b): centralize one HassLike type in src/ha/types.ts and drop these casts.
 interface HassLike {
   states: Record<string, unknown>;
   connection: unknown;
 }
 
-interface HassLikeTyped {
-  states: Record<string, { attributes?: { device_class?: string } }>;
+interface HassTyped {
+  states: Record<
+    string,
+    { state: string; attributes: { friendly_name?: string; device_class?: string } }
+  >;
   connection: RegistryConnection;
+  callService: (
+    domain: string,
+    service: string,
+    data: { entity_id: string },
+  ) => Promise<unknown>;
 }
 
-export function Panel({ hass }: { hass?: HassLike; dark?: boolean }) {
-  const tree = useStructureTree(hass as HassLikeTyped | undefined);
+export function Panel({ hass, dark }: { hass?: HassLike; dark?: boolean }) {
+  const tree = useStructureTree(hass as never);
+  const wrapper = `app${dark ? " dark" : ""} min-h-screen`;
 
   if (!hass) {
-    return <div style={{ padding: 16, fontFamily: "sans-serif" }}>Verbinde…</div>;
+    return (
+      <div className={wrapper}>
+        <div className="p-4 text-muted">Verbinde…</div>
+      </div>
+    );
   }
   if (!tree) {
-    return <div style={{ padding: 16, fontFamily: "sans-serif" }}>Lade Struktur…</div>;
+    return (
+      <div className={wrapper}>
+        <div className="p-4 text-muted">Lade Struktur…</div>
+      </div>
+    );
   }
-  return <StructureView tree={tree} />;
+  return (
+    <div className={wrapper}>
+      <DashboardView hass={hass as unknown as HassTyped} tree={tree} />
+    </div>
+  );
 }
