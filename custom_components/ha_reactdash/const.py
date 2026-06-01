@@ -1,0 +1,6 @@
+DOMAIN = "ha_reactdash"
+PANEL_URL_PATH = "reactdash"
+PANEL_TITLE = "ReactDash"
+PANEL_ICON = "mdi:view-dashboard"
+WEBCOMPONENT_NAME = "ha-reactdash"
+STATIC_URL_BASE = "/ha_reactdash_static"

@@ -1,0 +1,12 @@
+{
+  "domain": "ha_reactdash",
+  "name": "ha-reactdash",
+  "version": "0.1.0",
+  "documentation": "https://github.com/nuvooo/ha-reactdash",
+  "issue_tracker": "https://github.com/nuvooo/ha-reactdash/issues",
+  "codeowners": ["@nuvooo"],
+  "config_flow": true,
+  "iot_class": "local_push",
+  "integration_type": "service",
+  "dependencies": ["http", "frontend", "panel_custom"]
+}
