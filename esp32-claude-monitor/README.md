@@ -9,31 +9,49 @@ und die **Woche** – jeweils mit **Countdown bis zum Reset**.
 Das Aussehen jedes Zustands stellst du in einem kleinen **Browser-Editor** ein
 und schickst es **live** ans Gerät – **kein Neu-Flashen** nötig.
 
-Die „Software" (Bridge + Editor) gibt es als **fertige Standalone-Datei pro
-Betriebssystem** – herunterladen, starten, fertig. **Node muss nicht
-installiert sein.**
+Die „Software" (Bridge + Editor) gibt es als **fertigen Installer pro
+Betriebssystem**. Installieren, fertig: sie **startet automatisch beim Login**
+und öffnet den Editor im Browser. **Node muss nicht installiert sein.**
 
 > Liegt aktuell als Unterordner im `ha-reactdash`-Repo, ist aber komplett
 > self-contained – `esp32-claude-monitor/` lässt sich 1:1 in ein eigenes Repo
 > herauslösen.
 
-## Schnellstart (ohne Node)
+## Installieren (ohne Node)
 
-1. Die Datei für dein System aus den **Releases** laden:
-   - macOS: `claude-monitor-macos`
-   - Windows: `claude-monitor-win.exe`
-   - Linux: `claude-monitor-linux`
-2. **Starten** (Doppelklick bzw. ausführen). Es öffnet automatisch den Editor
-   im Browser: **http://localhost:8718/**.
-3. Im Editor unten unter **⚙ Verbindung & Limits** die **MQTT-URL** deines
-   Brokers (und ggf. Budgets) eintragen → *Einstellungen speichern*.
-4. Roboter-Zustände gestalten → **An Gerät senden**.
+Aus den **Releases** den Installer für dein System laden und ausführen:
 
-> Auf macOS ggf. einmal über *Systemeinstellungen → Datenschutz & Sicherheit*
-> freigeben (unsignierte App). Linux: `chmod +x claude-monitor-linux`.
+| System  | Datei | Installiert nach | Autostart |
+|---------|-------|------------------|-----------|
+| macOS   | `claude-monitor-<ver>.pkg`  | `/usr/local/bin` | LaunchAgent (Login) |
+| Windows | `claude-monitor-setup.exe`  | Programme        | Autostart-Verknüpfung |
+| Linux   | `claude-monitor_<ver>_amd64.deb` | `/usr/local/bin` | `/etc/xdg/autostart` (Login) |
 
-Die App läuft als kleiner Hintergrunddienst und legt neben sich `config.json`
-(deine Einstellungen) und `anim_config.json` (deine Animationen) an.
+Nach der Installation läuft die App als kleiner Hintergrunddienst, **öffnet den
+Editor automatisch** unter **http://localhost:8718/** und legt `config.json`
+(Einstellungen) sowie `anim_config.json` (Animationen) an.
+
+Dann im Editor:
+
+1. Unter **⚙ Verbindung & Limits** die **MQTT-URL** deines Brokers (und ggf.
+   Budgets) eintragen → *Einstellungen speichern*.
+2. Roboter-Zustände gestalten → **An Gerät senden**.
+
+> macOS: unsigniert → ggf. einmal über *Systemeinstellungen → Datenschutz &
+> Sicherheit* freigeben. Linux `.deb`: `sudo dpkg -i claude-monitor_*.deb`.
+
+### Ohne Installer (nur die Binärdatei)
+
+Es gibt auch die nackten Binärdateien (`claude-monitor-linux/-macos/-win.exe`).
+Autostart richtest du dann selbst ein:
+
+```
+claude-monitor autostart enable     # aktiviert Autostart beim Login
+claude-monitor autostart disable    # entfernt ihn wieder
+```
+
+Das funktioniert auf allen drei Systemen (LaunchAgent / Autostart-Eintrag /
+Registry-Run).
 
 ## Woher kommen die Daten?
 
@@ -136,14 +154,26 @@ Voraussetzung nur zum **Bauen** (Endnutzer brauchen es nicht): Node.js ≥ 18.
 ```bash
 cd esp32-claude-monitor/bridge
 npm install
-npm start            # Dev-Lauf (öffnet den Editor)
-npm run package      # baut Standalone-Binaries -> dist/ (mac/win/linux)
+npm start             # Dev-Lauf (öffnet den Editor)
+npm run pkg:linux     # nur Linux-Binary -> dist/claude-monitor-linux
+npm run package       # alle Binaries -> dist/ (linux/macos/win.exe)
 ```
 
 `npm run package` bündelt mit esbuild und verpackt mit
 [`@yao-pkg/pkg`](https://github.com/yao-pkg/pkg) den Node-Runtime mit in die
-Binärdatei. Der CI-Workflow [`.github/workflows/release.yml`](.github/workflows/release.yml)
-baut die Binaries bei einem Tag `esp32-monitor-v*` und hängt sie ans Release.
+Binärdatei.
+
+**Installer bauen** (jeweils auf dem Ziel-OS bzw. in CI):
+
+```bash
+installer/linux/build-deb.sh   0.2.0   # .deb      (Linux, dpkg-deb)
+installer/macos/build-pkg.sh   0.2.0   # .pkg      (macOS, pkgbuild)
+iscc installer/windows/claude-monitor.iss        # Setup.exe (Windows, Inno Setup)
+```
+
+Der CI-Workflow [`.github/workflows/release.yml`](.github/workflows/release.yml)
+baut bei einem Tag `esp32-monitor-v*` auf je einem mac/win/linux-Runner die
+Binärdatei **und** den nativen Installer und hängt alles ans Release.
 
 ## MQTT-Verträge
 
@@ -166,13 +196,17 @@ baut die Binaries bei einem Tag `esp32-monitor-v*` und hängt sie ans Release.
 ```
 esp32-claude-monitor/
 ├── README.md
-├── .github/workflows/release.yml   # baut die Standalone-Binaries
+├── .github/workflows/release.yml   # baut Binaries + Installer (3-OS-Matrix)
 ├── bridge/
-│   ├── index.js                    # App: Usage + Hooks + Editor-Server + MQTT
+│   ├── index.js                    # App: Usage + Hooks + Editor + MQTT + autostart
 │   ├── usage.js                    # native Token-Auswertung (ohne ccusage)
 │   ├── scripts/embed-studio.mjs    # bäckt den Editor in die Binärdatei
-│   ├── package.json                # start / build / package (pkg)
+│   ├── package.json                # start / build / pkg:<os> / package
 │   └── hooks/settings.snippet.json # Claude-Hooks (<BIN> event <status>)
+├── installer/
+│   ├── linux/build-deb.sh          # .deb (+ /etc/xdg/autostart)
+│   ├── macos/{build-pkg.sh, *.plist, postinstall}  # .pkg (+ LaunchAgent)
+│   └── windows/claude-monitor.iss  # Inno-Setup (+ Autostart-Verknüpfung)
 ├── studio/index.html               # Animations-Editor (Canvas, kein Build)
 └── firmware/
     ├── platformio.ini

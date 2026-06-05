@@ -1,9 +1,9 @@
-# Baut die Standalone-Binaries (mac/win/linux) und hängt sie an ein Release.
+# Baut pro Betriebssystem die Standalone-Binärdatei UND den nativen Installer
+# (Linux .deb, macOS .pkg, Windows Setup.exe) und hängt sie an ein Release.
 #
-# Hinweis: Diese Workflow-Datei liegt im Unterprojekt. Damit GitHub Actions sie
-# ausführt, muss sie unter .github/workflows/ im REPO-ROOT liegen. Beim
-# Herauslösen in ein eigenes Repo ist sie bereits korrekt platziert; im
-# Monorepo entweder hierher kopieren/symlinken oder das Projekt herauslösen.
+# Hinweis: Diese Datei muss unter .github/workflows/ im REPO-ROOT liegen, damit
+# GitHub Actions sie ausführt. Beim Herauslösen in ein eigenes Repo ist sie
+# bereits korrekt platziert; im Monorepo hierher kopieren/symlinken.
 #
 # Auslöser: Tag wie  esp32-monitor-v0.2.0
 name: esp32-claude-monitor release
@@ -16,11 +16,16 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
     permissions:
       contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
+        shell: bash
         working-directory: esp32-claude-monitor/bridge
     steps:
       - uses: actions/checkout@v4
@@ -28,15 +33,47 @@ jobs:
         with:
           node-version: "20"
       - run: npm ci
-      - name: Build standalone binaries (mac/win/linux)
-        run: npm run package
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+
+      - name: Version aus Tag
+        id: ver
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "v=${GITHUB_REF_NAME#esp32-monitor-v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "v=0.0.0-dev" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Linux – Binary + .deb
+        if: runner.os == 'Linux'
+        run: |
+          npm run build && npm run pkg:linux
+          chmod +x ../installer/linux/build-deb.sh
+          ../installer/linux/build-deb.sh "${{ steps.ver.outputs.v }}" dist/claude-monitor-linux
+          mkdir -p out && mv ../installer/linux/*.deb out/ && cp dist/claude-monitor-linux out/
+
+      - name: macOS – Binary + .pkg
+        if: runner.os == 'macOS'
+        run: |
+          npm run build && npm run pkg:macos
+          chmod +x ../installer/macos/build-pkg.sh ../installer/macos/postinstall
+          ../installer/macos/build-pkg.sh "${{ steps.ver.outputs.v }}" dist/claude-monitor-macos
+          mkdir -p out && mv ../installer/macos/*.pkg out/ && cp dist/claude-monitor-macos out/
+
+      - name: Windows – Binary + Setup.exe
+        if: runner.os == 'Windows'
+        run: |
+          npm run build && npm run pkg:win
+          choco install innosetup -y --no-progress
+          "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" "$(cygpath -w ../installer/windows/claude-monitor.iss)"
+          mkdir -p out && mv ../installer/windows/Output/claude-monitor-setup.exe out/ && cp dist/claude-monitor-win.exe out/
+
+      - uses: actions/upload-artifact@v4
         with:
-          name: claude-monitor-binaries
-          path: esp32-claude-monitor/bridge/dist/*
-      - name: Attach to release
+          name: claude-monitor-${{ runner.os }}
+          path: esp32-claude-monitor/bridge/out/*
+
+      - name: An Release anhängen
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: esp32-claude-monitor/bridge/dist/*
+          files: esp32-claude-monitor/bridge/out/*

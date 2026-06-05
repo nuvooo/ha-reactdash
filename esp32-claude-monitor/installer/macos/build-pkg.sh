@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Baut ein macOS-.pkg (muss auf macOS laufen – pkgbuild). Installiert die
+# Binärdatei nach /usr/local/bin und einen LaunchAgent für Autostart am Login.
+#
+#   ./build-pkg.sh [VERSION] [PFAD_ZUR_BINARY]
+# Default-Binary: ../../bridge/dist/claude-monitor-macos  (aus npm run pkg:macos)
+set -euo pipefail
+cd "$(dirname "$0")"
+
+VERSION="${1:-0.2.0}"
+BIN="${2:-../../bridge/dist/claude-monitor-macos}"
+
+if [ ! -f "$BIN" ]; then
+  echo "Binary nicht gefunden: $BIN  (vorher 'npm run pkg:macos' im bridge/ ausführen)" >&2
+  exit 1
+fi
+
+ROOT="$(mktemp -d)"
+SCRIPTS="$(mktemp -d)"
+trap 'rm -rf "$ROOT" "$SCRIPTS"' EXIT
+
+mkdir -p "$ROOT/usr/local/bin" "$ROOT/Library/LaunchAgents"
+install -m 0755 "$BIN" "$ROOT/usr/local/bin/claude-monitor"
+install -m 0644 com.nuvooo.claude-monitor.plist "$ROOT/Library/LaunchAgents/com.nuvooo.claude-monitor.plist"
+install -m 0755 postinstall "$SCRIPTS/postinstall"
+
+OUT="claude-monitor-${VERSION}.pkg"
+pkgbuild --root "$ROOT" --scripts "$SCRIPTS" \
+  --identifier com.nuvooo.claude-monitor --version "$VERSION" \
+  --install-location / "$OUT"
+echo "gebaut: $OUT"

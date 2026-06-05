@@ -13,7 +13,10 @@
     "embed": "node scripts/embed-studio.mjs",
     "bundle": "esbuild index.js --bundle --platform=node --target=node18 --format=cjs --outfile=build/claude-monitor.cjs",
     "build": "npm run embed && npm run bundle",
-    "package": "npm run build && pkg build/claude-monitor.cjs --targets node18-linux-x64,node18-macos-x64,node18-macos-arm64,node18-win-x64 --out-path dist"
+    "pkg:linux": "pkg build/claude-monitor.cjs -t node18-linux-x64 -o dist/claude-monitor-linux",
+    "pkg:macos": "pkg build/claude-monitor.cjs -t node18-macos-x64 -o dist/claude-monitor-macos",
+    "pkg:win": "pkg build/claude-monitor.cjs -t node18-win-x64 -o dist/claude-monitor-win.exe",
+    "package": "npm run build && npm run pkg:linux && npm run pkg:macos && npm run pkg:win"
   },
   "engines": {
     "node": ">=18"

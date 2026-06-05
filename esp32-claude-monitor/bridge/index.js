@@ -10,9 +10,10 @@
 //   -> sendet den Status an die laufende Instanz und beendet sich sofort.
 
 import { createServer } from "node:http";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
+import { homedir } from "node:os";
 import path from "node:path";
 import mqtt from "mqtt";
 import { readSession, readWeekly } from "./usage.js";
@@ -63,6 +64,62 @@ function runHook(status) {
   fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }), signal: ctrl.signal })
     .catch(() => {})
     .finally(() => { clearTimeout(t); process.exit(0); });
+}
+
+// ---- Autostart beim Login:  claude-monitor autostart <enable|disable> -------
+// Plattformübergreifend; zeigt auf die laufende Binärdatei (im Dev auf node).
+const AUTOSTART_LABEL = "com.nuvooo.claude-monitor";
+function autostartTargetCmd() {
+  return isPkg ? `"${process.execPath}"` : `node "${path.join(APP_DIR, "index.js")}"`;
+}
+function runAutostart(action) {
+  const enable = action !== "disable";
+  try {
+    if (process.platform === "darwin") {
+      const dir = path.join(homedir(), "Library", "LaunchAgents");
+      const plist = path.join(dir, `${AUTOSTART_LABEL}.plist`);
+      if (enable) {
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(plist, `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>${AUTOSTART_LABEL}</string>
+  <key>ProgramArguments</key><array><string>${process.execPath}</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><false/>
+</dict></plist>\n`);
+        try { execFileSync("launchctl", ["unload", plist], { stdio: "ignore" }); } catch {}
+        try { execFileSync("launchctl", ["load", "-w", plist], { stdio: "ignore" }); } catch {}
+      } else {
+        try { execFileSync("launchctl", ["unload", "-w", plist], { stdio: "ignore" }); } catch {}
+        rmSync(plist, { force: true });
+      }
+    } else if (process.platform === "win32") {
+      const args = enable
+        ? ["add", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", "/v", "ClaudeMonitor", "/t", "REG_SZ", "/d", autostartTargetCmd(), "/f"]
+        : ["delete", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", "/v", "ClaudeMonitor", "/f"];
+      execFileSync("reg", args, { stdio: "ignore" });
+    } else {
+      const dir = path.join(homedir(), ".config", "autostart");
+      const file = path.join(dir, "claude-monitor.desktop");
+      if (enable) {
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(file, `[Desktop Entry]
+Type=Application
+Name=Claude Monitor
+Exec=${isPkg ? process.execPath : "node " + path.join(APP_DIR, "index.js")}
+X-GNOME-Autostart-enabled=true
+\n`);
+      } else {
+        rmSync(file, { force: true });
+      }
+    }
+    console.log(`[autostart] ${enable ? "aktiviert" : "deaktiviert"} (${process.platform})`);
+    process.exit(0);
+  } catch (e) {
+    console.error("[autostart] Fehler:", e.message);
+    process.exit(1);
+  }
 }
 
 // ---- Animations-Config ------------------------------------------------------
@@ -243,4 +300,5 @@ function main() {
 }
 
 if (process.argv[2] === "event") runHook(process.argv[3]);
+else if (process.argv[2] === "autostart") runAutostart(process.argv[3]);
 else main();
