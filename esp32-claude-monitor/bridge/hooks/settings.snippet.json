@@ -1,17 +1,17 @@
 {
-  "_comment": "In ~/.claude/settings.json unter \"hooks\" einfuegen. <PFAD> durch den absoluten Pfad zu bridge/hooks/hook.js ersetzen. 'node' muss im PATH sein (laeuft so auf Mac/Windows/Linux).",
+  "_comment": "In ~/.claude/settings.json unter \"hooks\" einfuegen. <BIN> = absoluter Pfad zur Standalone-App (z.B. /Applications/claude-monitor oder C:/.../claude-monitor.exe). Ohne Binary, mit Node-Quelle: 'node <PFAD>/index.js' statt '<BIN>'.",
   "hooks": {
     "UserPromptSubmit": [
-      { "hooks": [ { "type": "command", "command": "node <PFAD>/hook.js working" } ] }
+      { "hooks": [ { "type": "command", "command": "<BIN> event working" } ] }
     ],
     "PreToolUse": [
-      { "matcher": "*", "hooks": [ { "type": "command", "command": "node <PFAD>/hook.js working" } ] }
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "<BIN> event working" } ] }
     ],
     "Notification": [
-      { "hooks": [ { "type": "command", "command": "node <PFAD>/hook.js waiting" } ] }
+      { "hooks": [ { "type": "command", "command": "<BIN> event waiting" } ] }
     ],
     "Stop": [
-      { "hooks": [ { "type": "command", "command": "node <PFAD>/hook.js idle" } ] }
+      { "hooks": [ { "type": "command", "command": "<BIN> event idle" } ] }
     ]
   }
 }

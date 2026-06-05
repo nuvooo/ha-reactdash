@@ -3,6 +3,8 @@ bridge/node_modules/
 bridge/config.json
 bridge/anim_config.json
 bridge/.state.json
+bridge/build/
+bridge/dist/
 
 # Firmware (PlatformIO)
 firmware/.pio/

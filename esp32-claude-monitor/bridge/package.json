@@ -1,17 +1,28 @@
 {
   "name": "esp32-claude-monitor-bridge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Liest Claude-Token-Verbrauch (ccusage) + Working/Idle-Events und publiziert sie per MQTT an den ESP32-C6.",
+  "description": "Liest Claude-Token-Verbrauch (nativ) + Status und publiziert sie per MQTT an den ESP32-C6. Servt den Animations-Editor. Baubar als Standalone-Binary (kein Node nötig).",
   "main": "index.js",
+  "bin": {
+    "claude-monitor": "index.js"
+  },
   "scripts": {
-    "start": "node index.js"
+    "start": "node scripts/embed-studio.mjs && node index.js",
+    "embed": "node scripts/embed-studio.mjs",
+    "bundle": "esbuild index.js --bundle --platform=node --target=node18 --format=cjs --outfile=build/claude-monitor.cjs",
+    "build": "npm run embed && npm run bundle",
+    "package": "npm run build && pkg build/claude-monitor.cjs --targets node18-linux-x64,node18-macos-x64,node18-macos-arm64,node18-win-x64 --out-path dist"
   },
   "engines": {
     "node": ">=18"
   },
   "dependencies": {
     "mqtt": "^5.10.1"
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "^6.3.0",
+    "esbuild": "^0.24.0"
   }
 }
