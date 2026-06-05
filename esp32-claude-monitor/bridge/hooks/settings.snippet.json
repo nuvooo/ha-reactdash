@@ -1,0 +1,27 @@
+{
+  "_comment": "In ~/.claude/settings.json unter \"hooks\" einfuegen. Pfade an deinen Klon anpassen (absolute Pfade verwenden!).",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "/ABSOLUTER/PFAD/esp32-claude-monitor/bridge/hooks/claude-working.sh" }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "/ABSOLUTER/PFAD/esp32-claude-monitor/bridge/hooks/claude-working.sh" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "/ABSOLUTER/PFAD/esp32-claude-monitor/bridge/hooks/claude-idle.sh" }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "esp32-claude-monitor-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Liest Claude-Token-Verbrauch (ccusage) + Working/Idle-Events und publiziert sie per MQTT an den ESP32-C6.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "mqtt": "^5.10.1"
+  }
+}
