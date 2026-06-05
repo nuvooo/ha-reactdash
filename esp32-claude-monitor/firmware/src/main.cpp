@@ -60,15 +60,17 @@ struct AnimStyle {
   char     label[16];
 };
 
-// Index 0 = idle, 1 = working, 2 = waiting. Sinnvolle Defaults (Editor
-// überschreibt sie zur Laufzeit per MQTT).
-static AnimStyle g_styles[3] = {
+// Index 0 = idle, 1 = working, 2 = waiting, 3 = limit. Sinnvolle Defaults
+// (Editor überschreibt sie zur Laufzeit per MQTT).
+static AnimStyle g_styles[4] = {
   // idle
   { 0x2B2D42, 0x6C72A8, 0, EYE_BLINK, MOUTH_FLAT,  false, 0x3DDC97, false, 0xFFB347, true,  35, 0x6C72A8, "IDLE" },
   // working
   { 0x2B2D42, 0x3DDC97, 0, EYE_SCAN,  MOUTH_SMILE, true,  0x3DDC97, true,  0x3DDC97, true,  80, 0x3DDC97, "WORKING" },
   // waiting (braucht Bestaetigung)
   { 0x402B2D, 0xFFB347, 1, EYE_PULSE, MOUTH_O,     false, 0xFFB347, true,  0xFFB347, false, 55, 0xFFB347, "CONFIRM?" },
+  // limit (von der Bridge aus dem Verbrauch abgeleitet)
+  { 0x3A1620, 0xFF5C5C, 1, EYE_PULSE, MOUTH_FLAT,  false, 0xFF5C5C, true,  0xFF5C5C, false, 90, 0xFF5C5C, "LIMIT!" },
 };
 
 static volatile uint8_t g_statusIdx = 0; // aktueller Zustand
@@ -353,12 +355,13 @@ static void applyStyleJson(JsonObjectConst o, AnimStyle &st) {
 }
 
 static void handleConfig(byte *payload, unsigned int len) {
-  StaticJsonDocument<2048> doc;
+  StaticJsonDocument<4096> doc;
   if (deserializeJson(doc, payload, len)) return;
   JsonObjectConst states = doc["states"];
   applyStyleJson(states["idle"],    g_styles[0]);
   applyStyleJson(states["working"], g_styles[1]);
   applyStyleJson(states["waiting"], g_styles[2]);
+  applyStyleJson(states["limit"],   g_styles[3]);
   Serial.println("[mqtt] anim-config übernommen");
 }
 
@@ -368,6 +371,7 @@ static void handleState(byte *payload, unsigned int len) {
   const char *st = doc["status"] | "idle";
   if (!strcmp(st, "working"))      g_statusIdx = 1;
   else if (!strcmp(st, "waiting")) g_statusIdx = 2;
+  else if (!strcmp(st, "limit"))   g_statusIdx = 3;
   else                             g_statusIdx = 0;
   JsonObjectConst se = doc["session"], we = doc["weekly"];
   if (!se.isNull()) { g_session.usedPct = se["usedPct"] | 0; g_session.usedTokens = se["usedTokens"] | 0LL; g_session.resetEpoch = se["resetEpoch"] | 0LL; }
@@ -433,7 +437,7 @@ void setup() {
 
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
   mqtt.setCallback(mqtt_cb);
-  mqtt.setBufferSize(2304); // anim-config kann ~2KB groß sein
+  mqtt.setBufferSize(3072); // anim-config (4 Zustände) kann ~1.5KB groß sein
 }
 
 void loop() {

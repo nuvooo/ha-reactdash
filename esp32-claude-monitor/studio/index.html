@@ -54,9 +54,12 @@
       <div class="tab active" data-s="idle">Leerlauf</div>
       <div class="tab" data-s="working">Arbeitet</div>
       <div class="tab" data-s="waiting">Bestätigung</div>
+      <div class="tab" data-s="limit">Limit</div>
     </div>
     <div class="hint">Vorschau zeigt den oben gewählten Zustand. „Auf Gerät zeigen"
-      schaltet den ESP32 testweise in diesen Zustand.</div>
+      schaltet den ESP32 testweise in diesen Zustand. Der Zustand <b>Limit</b>
+      wird im Betrieb automatisch von der Bridge gesetzt, sobald der Verbrauch
+      die Schwelle (Standard 85 %) erreicht – hier stellst du nur sein Aussehen ein.</div>
     <button class="ghost" id="showOnDevice" style="margin-top:10px;width:100%">Auf Gerät zeigen</button>
   </div>
 
@@ -78,6 +81,7 @@ const DEFAULTS = {
     idle:    { label:"IDLE",     bodyColor:"#2B2D42", eyeColor:"#6C72A8", eyeShape:"circle", eyeAnim:"blink", mouth:"flat",  spinner:false, spinnerColor:"#3DDC97", antenna:false, antennaColor:"#FFB347", bob:true,  speed:35, labelColor:"#6C72A8" },
     working: { label:"WORKING",  bodyColor:"#2B2D42", eyeColor:"#3DDC97", eyeShape:"circle", eyeAnim:"scan",  mouth:"smile", spinner:true,  spinnerColor:"#3DDC97", antenna:true,  antennaColor:"#3DDC97", bob:true,  speed:80, labelColor:"#3DDC97" },
     waiting: { label:"CONFIRM?", bodyColor:"#402B2D", eyeColor:"#FFB347", eyeShape:"square", eyeAnim:"pulse", mouth:"o",     spinner:false, spinnerColor:"#FFB347", antenna:true,  antennaColor:"#FFB347", bob:false, speed:55, labelColor:"#FFB347" },
+    limit:   { label:"LIMIT!",   bodyColor:"#3A1620", eyeColor:"#FF5C5C", eyeShape:"square", eyeAnim:"pulse", mouth:"flat",  spinner:false, spinnerColor:"#FF5C5C", antenna:true,  antennaColor:"#FF5C5C", bob:false, speed:90, labelColor:"#FF5C5C" },
   }
 };
 
@@ -196,7 +200,7 @@ document.getElementById("send").addEventListener("click", async () => {
   toast(ok ? "✓ an Gerät gesendet & gespeichert" : "✗ Bridge nicht erreichbar (läuft node index.js?)");
 });
 document.getElementById("showOnDevice").addEventListener("click", async () => {
-  const ok = await post("/event", { status: current }).catch(()=>false);
+  const ok = await post("/preview", { status: current }).catch(()=>false);
   toast(ok ? "✓ Gerät zeigt jetzt: " + current : "✗ Bridge nicht erreichbar");
 });
 document.getElementById("download").addEventListener("click", () => {
@@ -213,6 +217,8 @@ document.getElementById("reset").addEventListener("click", () => {
     const r = await fetch("/config");
     if (r.ok) { const c = await r.json(); if (c && c.states) anim = c; }
   } catch {}
+  // ältere Configs ohne "limit" nachrüsten
+  if (anim.states && !anim.states.limit) anim.states.limit = JSON.parse(JSON.stringify(DEFAULTS.states.limit));
   buildForm();
 })();
 </script>

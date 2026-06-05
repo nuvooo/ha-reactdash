@@ -4,6 +4,7 @@
 // Drei Aufgaben:
 //   1) Token-Verbrauch via ccusage -> MQTT (Session = 5h-Block, Woche = 7 Tage)
 //   2) Status (idle / working / waiting) via Claude-Code-Hooks (HTTP)
+//      + abgeleiteter Zustand "limit", wenn der Verbrauch eine Schwelle reißt.
 //   3) Servt den Animations-Editor und pusht dessen Config retained auf MQTT,
 //      sodass der ESP32 das Aussehen je Zustand ohne Reflash übernimmt.
 
@@ -31,9 +32,11 @@ try {
 const POLL_MS = (cfg.pollSeconds ?? 30) * 1000;
 const SESSION_BUDGET = cfg.budgets?.sessionTokens ?? 250_000_000;
 const WEEKLY_BUDGET = cfg.budgets?.weeklyTokens ?? 2_500_000_000;
+const LIMIT_PCT = cfg.limit?.pct ?? 85; // ab hier -> Zustand "limit"
 const STATE_TOPIC = cfg.mqtt.topic ?? "claude/monitor/state";
 const CONFIG_TOPIC = cfg.mqtt.configTopic ?? "claude/monitor/config";
-const VALID_STATUS = new Set(["idle", "working", "waiting"]);
+const HOOK_STATUS = new Set(["idle", "working", "waiting"]);
+const PREVIEW_STATUS = new Set(["idle", "working", "waiting", "limit"]);
 
 // ---- Animations-Config (vom Editor, persistiert) ---------------------------
 const animPath = path.join(__dirname, "anim_config.json");
@@ -43,15 +46,23 @@ const DEFAULT_ANIM = {
     idle:    { label: "IDLE",     bodyColor: "#2B2D42", eyeColor: "#6C72A8", eyeShape: "circle", eyeAnim: "blink", mouth: "flat",  spinner: false, spinnerColor: "#3DDC97", antenna: false, antennaColor: "#FFB347", bob: true,  speed: 35, labelColor: "#6C72A8" },
     working: { label: "WORKING",  bodyColor: "#2B2D42", eyeColor: "#3DDC97", eyeShape: "circle", eyeAnim: "scan",  mouth: "smile", spinner: true,  spinnerColor: "#3DDC97", antenna: true,  antennaColor: "#3DDC97", bob: true,  speed: 80, labelColor: "#3DDC97" },
     waiting: { label: "CONFIRM?", bodyColor: "#402B2D", eyeColor: "#FFB347", eyeShape: "square", eyeAnim: "pulse", mouth: "o",     spinner: false, spinnerColor: "#FFB347", antenna: true,  antennaColor: "#FFB347", bob: false, speed: 55, labelColor: "#FFB347" },
+    limit:   { label: "LIMIT!",   bodyColor: "#3A1620", eyeColor: "#FF5C5C", eyeShape: "square", eyeAnim: "pulse", mouth: "flat",  spinner: false, spinnerColor: "#FF5C5C", antenna: true,  antennaColor: "#FF5C5C", bob: false, speed: 90, labelColor: "#FF5C5C" },
   },
 };
-let anim = existsSync(animPath)
-  ? JSON.parse(readFileSync(animPath, "utf8"))
-  : DEFAULT_ANIM;
+let anim = existsSync(animPath) ? JSON.parse(readFileSync(animPath, "utf8")) : DEFAULT_ANIM;
+// Sicherstellen, dass "limit" existiert (ältere gespeicherte Configs nachrüsten)
+if (anim.states && !anim.states.limit) anim.states.limit = DEFAULT_ANIM.states.limit;
 
 // ---- Laufzeit-Status --------------------------------------------------------
-let status = "idle";
-let lastState = "";
+let hookStatus = "idle"; // von den Claude-Hooks gesetzt
+let lastSession = { usedPct: 0, usedTokens: 0, resetEpoch: 0 };
+let lastWeekly = { usedPct: 0, usedTokens: 0, resetEpoch: 0 };
+
+// "limit" hat Vorrang vor dem Hook-Status, damit die Warnung sichtbar bleibt.
+function derivedStatus() {
+  const mx = Math.max(lastSession.usedPct, lastWeekly.usedPct);
+  return mx >= LIMIT_PCT ? "limit" : hookStatus;
+}
 
 // ---- MQTT -------------------------------------------------------------------
 const mqttClient = mqtt.connect(cfg.mqtt.url, {
@@ -65,6 +76,11 @@ mqttClient.on("error", (e) => console.error("[bridge] MQTT-Fehler:", e.message))
 function publishAnim() {
   mqttClient.publish(CONFIG_TOPIC, JSON.stringify(anim), { retain: true });
   console.log(`[bridge] anim-config publiziert -> ${CONFIG_TOPIC}`);
+}
+function publishState(statusVal) {
+  const payload = { status: statusVal, session: lastSession, weekly: lastWeekly, ts: Math.floor(Date.now() / 1000) };
+  mqttClient.publish(STATE_TOPIC, JSON.stringify(payload), { retain: cfg.mqtt.retain ?? true });
+  return payload;
 }
 
 // ---- Token-Helpers ----------------------------------------------------------
@@ -113,33 +129,21 @@ async function readWeekly() {
   return { usedPct: clampPct(usedTokens, WEEKLY_BUDGET), usedTokens, resetEpoch: nextWeeklyResetEpoch() };
 }
 
-// ---- State publishen --------------------------------------------------------
-async function publishState({ force = false } = {}) {
-  let session, weekly;
+// ---- Poll-Schleife ----------------------------------------------------------
+async function pollAndPublish() {
   try {
-    [session, weekly] = await Promise.all([readSession(), readWeekly()]);
+    const [s, w] = await Promise.all([readSession(), readWeekly()]);
+    lastSession = s;
+    lastWeekly = w;
   } catch (e) {
     console.error("[bridge] ccusage-Fehler:", e.message);
-    // Status trotzdem publishen, damit der Roboter reagiert.
-    session = weekly = { usedPct: 0, usedTokens: 0, resetEpoch: 0 };
   }
-  const payload = { status, session, weekly, ts: Math.floor(Date.now() / 1000) };
-  const cmp = JSON.stringify({ ...payload, ts: 0 });
-  if (!force && cmp === lastState) return;
-  lastState = cmp;
-  mqttClient.publish(STATE_TOPIC, JSON.stringify(payload), { retain: cfg.mqtt.retain ?? true });
-}
-function publishStatusNow() {
-  if (!lastState) return publishState({ force: true });
-  const prev = JSON.parse(lastState);
-  prev.status = status;
-  prev.ts = Math.floor(Date.now() / 1000);
-  lastState = JSON.stringify({ ...prev, ts: 0 });
-  mqttClient.publish(STATE_TOPIC, JSON.stringify(prev), { retain: cfg.mqtt.retain ?? true });
-  console.log(`[bridge] status -> ${status}`);
+  const st = derivedStatus();
+  publishState(st);
+  console.log(`[bridge] state -> ${st} (session ${lastSession.usedPct}% / weekly ${lastWeekly.usedPct}%)`);
 }
 
-// ---- HTTP-Server: Editor + Hook-/Config-Endpoints --------------------------
+// ---- HTTP-Server: Editor + Endpoints ---------------------------------------
 function send(res, code, body, type = "application/json") {
   res.writeHead(code, { "Content-Type": type });
   res.end(body);
@@ -180,13 +184,32 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // Status-Event (von Claude-Hooks ODER vom Editor-Vorschaubutton)
+  // Status-Event von den Claude-Hooks (idle/working/waiting). "limit" wird
+  // NICHT hier gesetzt, sondern von der Bridge aus dem Verbrauch abgeleitet.
   if (req.method === "POST" && req.url === "/event") {
     try {
       const { status: s } = JSON.parse((await readBody(req)) || "{}");
-      if (VALID_STATUS.has(s) && s !== status) {
-        status = s;
-        publishStatusNow();
+      if (HOOK_STATUS.has(s)) {
+        hookStatus = s;
+        const eff = derivedStatus();
+        publishState(eff);
+        console.log(`[bridge] hook ${s} -> ${eff}`);
+      }
+      return send(res, 204, "");
+    } catch {
+      return send(res, 400, JSON.stringify({ error: "bad json" }));
+    }
+  }
+
+  // Vorschau-Button im Editor: zeigt den Zustand EINMALIG erzwungen am Gerät
+  // (auch "limit"), ohne den Hook-Status zu verändern. Beim nächsten Poll
+  // greift wieder die normale Ableitung.
+  if (req.method === "POST" && req.url === "/preview") {
+    try {
+      const { status: s } = JSON.parse((await readBody(req)) || "{}");
+      if (PREVIEW_STATUS.has(s)) {
+        publishState(s);
+        console.log(`[bridge] preview -> ${s}`);
       }
       return send(res, 204, "");
     } catch {
@@ -205,9 +228,9 @@ server.listen(PORT, () => {
 
 // ---- Loop -------------------------------------------------------------------
 mqttClient.once("connect", () => {
-  publishAnim(); // gespeicherte/Default-Animation sofort bereitstellen
-  publishState({ force: true });
-  setInterval(() => publishState(), POLL_MS);
+  publishAnim();
+  pollAndPublish();
+  setInterval(() => pollAndPublish(), POLL_MS);
 });
 
 process.on("SIGINT", () => mqttClient.end(() => process.exit(0)));

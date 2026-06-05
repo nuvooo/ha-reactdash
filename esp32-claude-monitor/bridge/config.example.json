@@ -20,5 +20,9 @@
   "weekly": {
     "_comment": "Setze den Anker auf deinen echten Wochen-Reset (siehe /usage in Claude Code). Wird in 7-Tage-Schritten weitergezaehlt.",
     "resetAnchorIso": "2026-06-02T00:00:00Z"
+  },
+  "limit": {
+    "_comment": "Ab diesem Prozent-Verbrauch (Session ODER Woche) setzt die Bridge den Zustand 'limit'.",
+    "pct": 85
   }
 }
