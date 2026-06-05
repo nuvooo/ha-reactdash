@@ -1,17 +1,16 @@
 #!/usr/bin/env node
-// ESP32 Claude Monitor – Bridge
+// ESP32 Claude Monitor – Bridge  (Mac / Windows / Linux)
 //
-// Fuehrt zwei Signale zusammen und publiziert sie per MQTT an den ESP32:
-//   1) Token-Verbrauch via ccusage (aktiver 5h-Block = Session, 7-Tage = Woche)
-//   2) Working/Idle via HTTP-Events, die Claude-Code-Hooks schicken
-//
-// Kein offizielles Limit-API existiert -> Prozente werden gegen kalibrierbare
-// Budgets gerechnet (siehe config.json / README).
+// Drei Aufgaben:
+//   1) Token-Verbrauch via ccusage -> MQTT (Session = 5h-Block, Woche = 7 Tage)
+//   2) Status (idle / working / waiting) via Claude-Code-Hooks (HTTP)
+//   3) Servt den Animations-Editor und pusht dessen Config retained auf MQTT,
+//      sodass der ESP32 das Aussehen je Zustand ohne Reflash übernimmt.
 
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import http from "node:http";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import mqtt from "mqtt";
@@ -19,23 +18,40 @@ import mqtt from "mqtt";
 const execAsync = promisify(exec);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// ---- Config laden -----------------------------------------------------------
+// ---- Config -----------------------------------------------------------------
 const cfgPath = path.join(__dirname, "config.json");
 let cfg;
 try {
   cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
-} catch (e) {
-  console.error(`[bridge] Konnte ${cfgPath} nicht lesen. config.example.json kopieren und anpassen.`);
+} catch {
+  console.error(`[bridge] ${cfgPath} fehlt. config.example.json kopieren und anpassen.`);
   process.exit(1);
 }
 
 const POLL_MS = (cfg.pollSeconds ?? 30) * 1000;
 const SESSION_BUDGET = cfg.budgets?.sessionTokens ?? 250_000_000;
 const WEEKLY_BUDGET = cfg.budgets?.weeklyTokens ?? 2_500_000_000;
+const STATE_TOPIC = cfg.mqtt.topic ?? "claude/monitor/state";
+const CONFIG_TOPIC = cfg.mqtt.configTopic ?? "claude/monitor/config";
+const VALID_STATUS = new Set(["idle", "working", "waiting"]);
+
+// ---- Animations-Config (vom Editor, persistiert) ---------------------------
+const animPath = path.join(__dirname, "anim_config.json");
+const DEFAULT_ANIM = {
+  version: 1,
+  states: {
+    idle:    { label: "IDLE",     bodyColor: "#2B2D42", eyeColor: "#6C72A8", eyeShape: "circle", eyeAnim: "blink", mouth: "flat",  spinner: false, spinnerColor: "#3DDC97", antenna: false, antennaColor: "#FFB347", bob: true,  speed: 35, labelColor: "#6C72A8" },
+    working: { label: "WORKING",  bodyColor: "#2B2D42", eyeColor: "#3DDC97", eyeShape: "circle", eyeAnim: "scan",  mouth: "smile", spinner: true,  spinnerColor: "#3DDC97", antenna: true,  antennaColor: "#3DDC97", bob: true,  speed: 80, labelColor: "#3DDC97" },
+    waiting: { label: "CONFIRM?", bodyColor: "#402B2D", eyeColor: "#FFB347", eyeShape: "square", eyeAnim: "pulse", mouth: "o",     spinner: false, spinnerColor: "#FFB347", antenna: true,  antennaColor: "#FFB347", bob: false, speed: 55, labelColor: "#FFB347" },
+  },
+};
+let anim = existsSync(animPath)
+  ? JSON.parse(readFileSync(animPath, "utf8"))
+  : DEFAULT_ANIM;
 
 // ---- Laufzeit-Status --------------------------------------------------------
-let working = false; // wird von den Claude-Hooks gesetzt
-let lastPublished = "";
+let status = "idle";
+let lastState = "";
 
 // ---- MQTT -------------------------------------------------------------------
 const mqttClient = mqtt.connect(cfg.mqtt.url, {
@@ -44,15 +60,18 @@ const mqttClient = mqtt.connect(cfg.mqtt.url, {
   reconnectPeriod: 3000,
 });
 mqttClient.on("connect", () => console.log(`[bridge] MQTT verbunden: ${cfg.mqtt.url}`));
-mqttClient.on("error", (err) => console.error("[bridge] MQTT-Fehler:", err.message));
+mqttClient.on("error", (e) => console.error("[bridge] MQTT-Fehler:", e.message));
 
-// ---- Helpers ----------------------------------------------------------------
+function publishAnim() {
+  mqttClient.publish(CONFIG_TOPIC, JSON.stringify(anim), { retain: true });
+  console.log(`[bridge] anim-config publiziert -> ${CONFIG_TOPIC}`);
+}
+
+// ---- Token-Helpers ----------------------------------------------------------
 function clampPct(used, budget) {
   if (!budget || budget <= 0) return 0;
   return Math.max(0, Math.min(100, Math.round((used / budget) * 100)));
 }
-
-// Naechster Wochen-Reset: Anker + n*7 Tage, der in der Zukunft liegt.
 function nextWeeklyResetEpoch() {
   const anchorMs = Date.parse(cfg.weekly?.resetAnchorIso ?? "2026-06-02T00:00:00Z");
   const weekMs = 7 * 24 * 3600 * 1000;
@@ -61,126 +80,134 @@ function nextWeeklyResetEpoch() {
   const cycles = Math.ceil((now - anchorMs) / weekMs);
   return Math.floor((anchorMs + cycles * weekMs) / 1000);
 }
-
-function sumBlockTokens(block) {
-  // Feldnamen variieren je nach ccusage-Version/Befehl -> defensiv summieren.
-  const t = block.tokenCounts ?? block;
+function sumBlockTokens(b) {
+  const t = b.tokenCounts ?? b;
   return (
-    (t.inputTokens ?? block.inputTokens ?? 0) +
-    (t.outputTokens ?? block.outputTokens ?? 0) +
-    (t.cacheCreationInputTokens ?? block.cacheCreationTokens ?? 0) +
-    (t.cacheReadInputTokens ?? block.cacheReadTokens ?? 0)
+    (t.inputTokens ?? b.inputTokens ?? 0) +
+    (t.outputTokens ?? b.outputTokens ?? 0) +
+    (t.cacheCreationInputTokens ?? b.cacheCreationTokens ?? 0) +
+    (t.cacheReadInputTokens ?? b.cacheReadTokens ?? 0)
   );
 }
-
-// ---- ccusage abfragen -------------------------------------------------------
 async function runCcusage(args) {
-  const cmd = `${cfg.ccusageCmd} ${args}`;
-  const { stdout } = await execAsync(cmd, { maxBuffer: 16 * 1024 * 1024 });
+  const { stdout } = await execAsync(`${cfg.ccusageCmd} ${args}`, { maxBuffer: 16 * 1024 * 1024 });
   return JSON.parse(stdout);
 }
-
 async function readSession() {
-  // Aktiver 5h-Block = "Session"-Fenster. blockEnd = Reset-Zeitpunkt.
   const out = await runCcusage("blocks --active --json");
   const blocks = out.blocks ?? out.data ?? [];
   const active = blocks.find((b) => b.isActive) ?? blocks[0];
-  if (!active) {
-    return { usedPct: 0, usedTokens: 0, resetEpoch: Math.floor(Date.now() / 1000) + 5 * 3600 };
-  }
+  if (!active) return { usedPct: 0, usedTokens: 0, resetEpoch: Math.floor(Date.now() / 1000) + 5 * 3600 };
   const usedTokens = sumBlockTokens(active);
   const endIso = active.endTime ?? active.blockEnd;
-  const resetEpoch = endIso
-    ? Math.floor(Date.parse(endIso) / 1000)
-    : Math.floor(Date.now() / 1000) + 5 * 3600;
+  const resetEpoch = endIso ? Math.floor(Date.parse(endIso) / 1000) : Math.floor(Date.now() / 1000) + 5 * 3600;
   return { usedPct: clampPct(usedTokens, SESSION_BUDGET), usedTokens, resetEpoch };
 }
-
 async function readWeekly() {
-  // 7-Tage-Aggregat ueber die taeglichen Reports.
-  const since = new Date(Date.now() - 7 * 24 * 3600 * 1000)
-    .toISOString()
-    .slice(0, 10)
-    .replace(/-/g, "");
+  const since = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().slice(0, 10).replace(/-/g, "");
   const out = await runCcusage(`daily --since ${since} --json`);
-  const summary = out.summary ?? {};
+  const s = out.summary ?? {};
   const usedTokens =
-    summary.totalTokens ??
-    (summary.totalInputTokens ?? 0) +
-      (summary.totalOutputTokens ?? 0) +
-      (summary.totalCacheCreationTokens ?? 0) +
-      (summary.totalCacheReadTokens ?? 0);
-  return {
-    usedPct: clampPct(usedTokens, WEEKLY_BUDGET),
-    usedTokens,
-    resetEpoch: nextWeeklyResetEpoch(),
-  };
+    s.totalTokens ??
+    (s.totalInputTokens ?? 0) + (s.totalOutputTokens ?? 0) + (s.totalCacheCreationTokens ?? 0) + (s.totalCacheReadTokens ?? 0);
+  return { usedPct: clampPct(usedTokens, WEEKLY_BUDGET), usedTokens, resetEpoch: nextWeeklyResetEpoch() };
 }
 
-// ---- Publish ----------------------------------------------------------------
-async function buildAndPublish({ force = false } = {}) {
+// ---- State publishen --------------------------------------------------------
+async function publishState({ force = false } = {}) {
   let session, weekly;
   try {
     [session, weekly] = await Promise.all([readSession(), readWeekly()]);
   } catch (e) {
     console.error("[bridge] ccusage-Fehler:", e.message);
-    return;
+    // Status trotzdem publishen, damit der Roboter reagiert.
+    session = weekly = { usedPct: 0, usedTokens: 0, resetEpoch: 0 };
   }
-  const payload = { working, session, weekly, ts: Math.floor(Date.now() / 1000) };
-  const json = JSON.stringify(payload);
-
-  // working-Feld haeufig publishen, Tokens nur bei Aenderung -> Vergleich ohne ts.
+  const payload = { status, session, weekly, ts: Math.floor(Date.now() / 1000) };
   const cmp = JSON.stringify({ ...payload, ts: 0 });
-  if (!force && cmp === lastPublished) return;
-  lastPublished = cmp;
-
-  mqttClient.publish(cfg.mqtt.topic, json, { retain: cfg.mqtt.retain ?? true });
-  console.log(`[bridge] publish ${cfg.mqtt.topic}:`, json);
+  if (!force && cmp === lastState) return;
+  lastState = cmp;
+  mqttClient.publish(STATE_TOPIC, JSON.stringify(payload), { retain: cfg.mqtt.retain ?? true });
 }
-
-// working/idle aendert sich -> sofort publishen (nur Flag, ohne ccusage-Roundtrip)
-function publishWorkingNow() {
-  if (!lastPublished) return buildAndPublish({ force: true });
-  const prev = JSON.parse(lastPublished);
-  prev.working = working;
+function publishStatusNow() {
+  if (!lastState) return publishState({ force: true });
+  const prev = JSON.parse(lastState);
+  prev.status = status;
   prev.ts = Math.floor(Date.now() / 1000);
-  lastPublished = JSON.stringify({ ...prev, ts: 0 });
-  mqttClient.publish(cfg.mqtt.topic, JSON.stringify(prev), { retain: cfg.mqtt.retain ?? true });
-  console.log(`[bridge] publish (working=${working})`);
+  lastState = JSON.stringify({ ...prev, ts: 0 });
+  mqttClient.publish(STATE_TOPIC, JSON.stringify(prev), { retain: cfg.mqtt.retain ?? true });
+  console.log(`[bridge] status -> ${status}`);
 }
 
-// ---- HTTP-Endpoint fuer Claude-Hooks ---------------------------------------
-// POST /event  Body: {"working": true|false}
-const server = http.createServer((req, res) => {
-  if (req.method === "POST" && req.url === "/event") {
-    let body = "";
-    req.on("data", (c) => (body += c));
-    req.on("end", () => {
-      try {
-        const { working: w } = JSON.parse(body || "{}");
-        if (typeof w === "boolean" && w !== working) {
-          working = w;
-          publishWorkingNow();
-        }
-        res.writeHead(204).end();
-      } catch {
-        res.writeHead(400).end("bad json");
-      }
-    });
-    return;
+// ---- HTTP-Server: Editor + Hook-/Config-Endpoints --------------------------
+function send(res, code, body, type = "application/json") {
+  res.writeHead(code, { "Content-Type": type });
+  res.end(body);
+}
+function readBody(req) {
+  return new Promise((resolve) => {
+    let b = "";
+    req.on("data", (c) => (b += c));
+    req.on("end", () => resolve(b));
+  });
+}
+
+const server = http.createServer(async (req, res) => {
+  // Editor ausliefern
+  if (req.method === "GET" && (req.url === "/" || req.url === "/index.html")) {
+    try {
+      const html = readFileSync(path.join(__dirname, "..", "studio", "index.html"));
+      return send(res, 200, html, "text/html; charset=utf-8");
+    } catch {
+      return send(res, 500, "studio/index.html nicht gefunden");
+    }
   }
-  res.writeHead(404).end();
+
+  // Aktuelle Animations-Config laden (Editor liest sie beim Start)
+  if (req.method === "GET" && req.url === "/config") {
+    return send(res, 200, JSON.stringify(anim));
+  }
+
+  // Animations-Config speichern + an Gerät pushen
+  if (req.method === "POST" && req.url === "/config") {
+    try {
+      anim = JSON.parse(await readBody(req));
+      writeFileSync(animPath, JSON.stringify(anim, null, 2));
+      publishAnim();
+      return send(res, 200, JSON.stringify({ ok: true }));
+    } catch {
+      return send(res, 400, JSON.stringify({ error: "bad json" }));
+    }
+  }
+
+  // Status-Event (von Claude-Hooks ODER vom Editor-Vorschaubutton)
+  if (req.method === "POST" && req.url === "/event") {
+    try {
+      const { status: s } = JSON.parse((await readBody(req)) || "{}");
+      if (VALID_STATUS.has(s) && s !== status) {
+        status = s;
+        publishStatusNow();
+      }
+      return send(res, 204, "");
+    } catch {
+      return send(res, 400, JSON.stringify({ error: "bad json" }));
+    }
+  }
+
+  send(res, 404, "not found", "text/plain");
 });
-server.listen(cfg.http?.port ?? 8718, () =>
-  console.log(`[bridge] Hook-Endpoint: http://localhost:${cfg.http?.port ?? 8718}/event`)
-);
+
+const PORT = cfg.http?.port ?? 8718;
+server.listen(PORT, () => {
+  console.log(`[bridge] Editor:  http://localhost:${PORT}/`);
+  console.log(`[bridge] Hooks ->  http://localhost:${PORT}/event`);
+});
 
 // ---- Loop -------------------------------------------------------------------
 mqttClient.once("connect", () => {
-  buildAndPublish({ force: true });
-  setInterval(() => buildAndPublish(), POLL_MS);
+  publishAnim(); // gespeicherte/Default-Animation sofort bereitstellen
+  publishState({ force: true });
+  setInterval(() => publishState(), POLL_MS);
 });
 
-process.on("SIGINT", () => {
-  mqttClient.end(() => process.exit(0));
-});
+process.on("SIGINT", () => mqttClient.end(() => process.exit(0)));

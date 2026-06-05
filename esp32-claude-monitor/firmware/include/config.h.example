@@ -11,8 +11,9 @@
 #define MQTT_PORT  1883
 #define MQTT_USER  ""            // leer lassen falls anonym
 #define MQTT_PASS  ""
-#define MQTT_TOPIC "claude/monitor/state"
-#define MQTT_CLIENT_ID "claude-monitor-c6"
+#define MQTT_TOPIC        "claude/monitor/state"   // Status + Tokens (von Bridge)
+#define MQTT_CONFIG_TOPIC "claude/monitor/config"  // Animations-Config (vom Editor)
+#define MQTT_CLIENT_ID    "claude-monitor-c6"
 
 // ---- NTP (fuer den Reset-Countdown) ----------------------------------------
 #define NTP_SERVER  "pool.ntp.org"

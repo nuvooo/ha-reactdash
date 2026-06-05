@@ -4,6 +4,7 @@
     "username": "",
     "password": "",
     "topic": "claude/monitor/state",
+    "configTopic": "claude/monitor/config",
     "retain": true
   },
   "http": {

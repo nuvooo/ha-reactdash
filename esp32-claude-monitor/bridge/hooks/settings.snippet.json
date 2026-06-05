@@ -1,27 +1,17 @@
 {
-  "_comment": "In ~/.claude/settings.json unter \"hooks\" einfuegen. Pfade an deinen Klon anpassen (absolute Pfade verwenden!).",
+  "_comment": "In ~/.claude/settings.json unter \"hooks\" einfuegen. <PFAD> durch den absoluten Pfad zu bridge/hooks/hook.js ersetzen. 'node' muss im PATH sein (laeuft so auf Mac/Windows/Linux).",
   "hooks": {
     "UserPromptSubmit": [
-      {
-        "hooks": [
-          { "type": "command", "command": "/ABSOLUTER/PFAD/esp32-claude-monitor/bridge/hooks/claude-working.sh" }
-        ]
-      }
+      { "hooks": [ { "type": "command", "command": "node <PFAD>/hook.js working" } ] }
     ],
     "PreToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          { "type": "command", "command": "/ABSOLUTER/PFAD/esp32-claude-monitor/bridge/hooks/claude-working.sh" }
-        ]
-      }
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "node <PFAD>/hook.js working" } ] }
+    ],
+    "Notification": [
+      { "hooks": [ { "type": "command", "command": "node <PFAD>/hook.js waiting" } ] }
     ],
     "Stop": [
-      {
-        "hooks": [
-          { "type": "command", "command": "/ABSOLUTER/PFAD/esp32-claude-monitor/bridge/hooks/claude-idle.sh" }
-        ]
-      }
+      { "hooks": [ { "type": "command", "command": "node <PFAD>/hook.js idle" } ] }
     ]
   }
 }

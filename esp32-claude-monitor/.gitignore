@@ -1,6 +1,7 @@
 # Bridge
 bridge/node_modules/
 bridge/config.json
+bridge/anim_config.json
 bridge/.state.json
 
 # Firmware (PlatformIO)
