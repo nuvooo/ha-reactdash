@@ -1,0 +1,31 @@
+{
+  "name": "claude-matrix-display-bridge",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Liest Claude-Token-Verbrauch (nativ) + Status und publiziert sie per MQTT an den ESP32-C6. Servt den Animations-Editor. Baubar als Standalone-Binary (kein Node nötig).",
+  "main": "index.js",
+  "bin": {
+    "claude-matrix": "index.js"
+  },
+  "scripts": {
+    "start": "node scripts/embed-studio.mjs && node index.js",
+    "embed": "node scripts/embed-studio.mjs",
+    "bundle": "esbuild index.js --bundle --platform=node --target=node18 --format=cjs --outfile=build/claude-matrix.cjs",
+    "build": "npm run embed && npm run bundle",
+    "pkg:linux": "pkg build/claude-matrix.cjs -t node18-linux-x64 -o dist/claude-matrix-linux",
+    "pkg:macos": "pkg build/claude-matrix.cjs -t node18-macos-x64 -o dist/claude-matrix-macos",
+    "pkg:win": "pkg build/claude-matrix.cjs -t node18-win-x64 -o dist/claude-matrix-win.exe",
+    "package": "npm run build && npm run pkg:linux && npm run pkg:macos && npm run pkg:win"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "mqtt": "^5.10.1"
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "^6.3.0",
+    "esbuild": "^0.24.0"
+  }
+}

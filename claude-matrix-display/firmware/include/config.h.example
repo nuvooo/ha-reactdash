@@ -1,0 +1,36 @@
+#pragma once
+// Kopiere diese Datei nach config.h und trage deine Werte ein.
+// config.h ist via .gitignore ausgenommen.
+
+// ---- WiFi -------------------------------------------------------------------
+#define WIFI_SSID     "DEIN_WLAN"
+#define WIFI_PASSWORD "DEIN_PASSWORT"
+
+// ---- MQTT -------------------------------------------------------------------
+#define MQTT_HOST  "192.168.1.10"
+#define MQTT_PORT  1883
+#define MQTT_USER  ""            // leer lassen falls anonym
+#define MQTT_PASS  ""
+#define MQTT_TOPIC        "claude/matrix/state"   // Status + Tokens (von Bridge)
+#define MQTT_CONFIG_TOPIC "claude/matrix/config"  // Animations-Config (vom Editor)
+#define MQTT_CLIENT_ID    "claude-matrix-c6"
+
+// ---- NTP (fuer den Reset-Countdown) ----------------------------------------
+#define NTP_SERVER  "pool.ntp.org"
+#define GMT_OFFSET_SEC      0      // UTC; Countdown ist offset-unabhaengig
+#define DAYLIGHT_OFFSET_SEC 0
+
+// ---- Display-Pins (Waveshare ESP32-C6-LCD-1.47) -----------------------------
+#define PIN_LCD_SCLK 7
+#define PIN_LCD_MOSI 6
+#define PIN_LCD_CS   14
+#define PIN_LCD_DC   15
+#define PIN_LCD_RST  21
+#define PIN_LCD_BL   22
+#define PIN_RGB_LED  8     // onboard WS2812 (optional)
+
+#define LCD_WIDTH  172
+#define LCD_HEIGHT 320
+
+// Wie oft die beiden Stats-Screens (Session/Weekly) wechseln (ms)
+#define SCREEN_ROTATE_MS 5000
